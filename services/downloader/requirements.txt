@@ -1,0 +1,11 @@
+fastapi
+pydantic
+libtorrent
+minio
+SQLAlchemy
+python-dotenv
+
+# --- Recommended additions based on your code ---
+uvicorn          # Recommended ASGI server to run FastAPI
+psycopg2-binary  # Required Postgres driver for SQLAlchemy's postgresql dialect
+requests         # Used by subtitles.py to call the OpenSubtitles API

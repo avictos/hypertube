@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hypertube Test Player</title>
+  <style>
+    body { background: #000; margin: 0; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; }
+    video { width: 100%; max-width: 1280px; }
+    #status { color: #fff; padding: 10px; font-size: 14px; }
+    #log { color: #0f0; font-size: 12px; max-height: 200px; overflow-y: auto;
+           width: 100%; max-width: 1280px; background: #111; padding: 10px; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading...</div>
+  <video id="v" controls></video>
+  <div id="log"></div>
+
+  <script>
+    // Paste your downloadId here after running the curl command
+    const DOWNLOAD_ID = new URLSearchParams(location.search).get('id')
+    const API = 'http://localhost:3000'
+
+    const video = document.getElementById('v')
+    const status = document.getElementById('status')
+    const log = document.getElementById('log')
+
+    function addLog(msg) {
+      log.innerHTML += msg + '<br>'
+      log.scrollTop = log.scrollHeight
+    }
+
+    // Poll status until pieces > 5, then start playing
+    async function pollStatus() {
+      const res = await fetch(`${API}/api/torrent/status?id=${DOWNLOAD_ID}`)
+      const data = await res.json()
+      status.textContent = `State: ${data.state} | Progress: ${data.progress}% | Pieces: ${data.pieces}/${data.totalPieces}`
+
+      if (data.pieces > 5 && !video.src) {
+        video.src = `${API}/api/stream/${DOWNLOAD_ID}`
+        addLog('Stream started')
+      }
+
+      if (data.state !== 'done') setTimeout(pollStatus, 2000)
+    }
+
+    video.addEventListener('error', () => addLog('Video error: ' + video.error?.message))
+    video.addEventListener('loadedmetadata', () => addLog('Metadata loaded, duration: ' + video.duration + 's'))
+    video.addEventListener('playing', () => addLog('Playing!'))
+    video.addEventListener('waiting', () => addLog('Buffering...'))
+    video.addEventListener('seeked', () => addLog('Seeked to: ' + video.currentTime + 's'))
+
+    pollStatus()
+  </script>
+</body>
+</html>

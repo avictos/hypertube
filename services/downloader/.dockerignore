@@ -1,0 +1,9 @@
+downloaded_movies
+torrents
+__pycache__
+*.pyc
+.env
+.env.*
+.git
+.DS_Store
+.mypy_cache

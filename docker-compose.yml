@@ -1,0 +1,136 @@
+services:
+    db:
+        image: postgres:18.3-alpine3.23
+        container_name: db
+        restart: always
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            - POSTGRES_DB=${POSTGRES_DB}
+        ports:
+            - "5432:5432"
+        networks:
+            - hypertube
+        volumes:
+            - postgres_data:/var/lib/postgresql
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    adminer:
+        image: adminer:latest
+        container_name: adminer
+        restart: unless-stopped
+        ports:
+            - "8080:8080"
+        networks:
+            - hypertube
+
+    minio:
+        image: minio/minio:latest
+        container_name: "minio"
+        tty: true
+        user: root
+        environment:
+            - TZ=${TZ}
+            - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+            - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+            - MINIO_BROWSER=${MINIO_BROWSER}
+        ports:
+            - "9001:9001" # Console
+            - "9000:9000" # API
+        volumes:
+            - minio_data:/data
+        command: server /data --console-address ":9001"
+        networks:
+            - hypertube
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 10s
+        restart: unless-stopped
+
+    minio-setup:
+        image: minio/mc:latest
+        container_name: "minio-setup"
+        depends_on:
+            minio:
+                condition: service_healthy
+        networks:
+            - hypertube
+        entrypoint:
+            - /bin/sh
+            - -c
+            - >
+                mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+                mc mb myminio/torrents --ignore-existing &&
+                mc mb myminio/backgrounds --ignore-existing &&
+                mc mb myminio/posters --ignore-existing &&
+                mc mb myminio/subtitles --ignore-existing &&
+                mc mb myminio/posters-cache --ignore-existing &&
+                mc anonymous set download myminio/torrents &&
+                mc anonymous set download myminio/backgrounds &&
+                mc anonymous set download myminio/posters &&
+                mc anonymous set download myminio/subtitles &&
+                mc anonymous set download myminio/posters-cache &&
+                echo "MinIO setup completed. Buckets created and permissions set."
+
+    downloader:
+        build:
+            context: ./services/downloader
+        container_name: downloader
+        restart: unless-stopped
+        env_file:
+            - ./services/downloader/.env
+        environment:
+            - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+            - MINIO_ENDPOINT=minio:9000
+        ports:
+            - "8000:8000"
+        depends_on:
+            db:
+                condition: service_healthy
+            minio-setup:
+                condition: service_completed_successfully
+        volumes:
+            - downloader_movies:/app/downloaded_movies
+            - downloader_torrents:/app/torrents
+        networks:
+            - hypertube
+
+    hypertube:
+        build:
+            context: ./services/hypertube
+        container_name: hypertube
+        restart: unless-stopped
+        env_file:
+            - ./services/hypertube/.env
+        environment:
+            - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+            - MINIO_ENDPOINT=minio:9000
+            - AUTH_INTERNAL_URL=http://auth:3333
+        ports:
+            - "3000:3000"
+        depends_on:
+            db:
+                condition: service_healthy
+            minio-setup:
+                condition: service_completed_successfully
+        networks:
+            - hypertube
+
+volumes:
+    postgres_data:
+    redis_data:
+    minio_data:
+    downloader_movies:
+    downloader_torrents:
+
+networks:
+    hypertube:
+        name: hypertube-net
+        external: true

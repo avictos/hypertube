@@ -1,0 +1,72 @@
+services:
+    auth-db:
+        image: postgres:18.3-alpine3.23
+        container_name: auth-db
+        restart: always
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            - POSTGRES_DB=${POSTGRES_DB}
+        ports:
+            - "5433:5432"
+        volumes:
+            - postgres_data:/var/lib/postgresql
+        networks:
+            - hypertube
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
+    auth-adminer:
+        image: adminer:latest
+        container_name: auth-adminer
+        restart: unless-stopped
+        ports:
+            - "8081:8080"
+        networks:
+            - hypertube
+
+    auth-redis:
+        image: redis:8.6.2-alpine
+        container_name: auth-redis
+        command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+        restart: always
+        ports:
+            - "6380:6379"
+        volumes:
+            - redis_data:/data
+        networks:
+            - hypertube
+
+    auth:
+        build:
+            context: .
+        container_name: auth
+        restart: unless-stopped
+        env_file:
+            - .env
+            - .env.crypto
+        environment:
+            - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@auth-db:5432/${POSTGRES_DB}
+            - REDIS_HOST=auth-redis
+            - REDIS_PORT=6379
+        ports:
+            - "3333:3333"
+        depends_on:
+            auth-db:
+                condition: service_healthy
+            auth-redis:
+                condition: service_started
+        networks:
+            - hypertube
+
+volumes:
+    postgres_data:
+    redis_data:
+
+networks:
+    hypertube:
+        name: hypertube-net
+        external: true
